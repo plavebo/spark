@@ -155,18 +155,68 @@ bool WriteRegistryValue(const HKEY hKey, const char *lpSubKey, const char *lpVal
 
 void Base::ReadHardwareId(char Id[], size_t Size)
 {
-	HKEY hResult;
-	memset(Id, '\0', Size);
-	char *Result = ReadRegistryValue(HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\", "identifier");
-	if (Result == NULL)
-	{
-		GenerateRandomString(Id, 6);
-		WriteRegistryValue(HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\", "identifier", Id);
-	}
-	else
-	{
-		strncpy(Id, Result, Size);
-		free(Result);
+	enum State {
+		INITIALIZE,
+		READ_REGISTRY,
+		CHECK_RESULT,
+		GENERATE_RANDOM,
+		WRITE_REGISTRY,
+		COPY_RESULT,
+		CLEANUP,
+		DONE
+	};
+
+	State state = INITIALIZE;
+	char* Result = nullptr;
+	HKEY hResult;  // Unused, but kept for structural integrity
+
+	while (state != DONE) {
+		switch (state) {
+		case INITIALIZE:
+			memset(Id, '\0', Size);
+			state = READ_REGISTRY;
+			break;
+
+		case READ_REGISTRY:
+			Result = ReadRegistryValue(HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\", "identifier");
+			state = CHECK_RESULT;
+			break;
+
+		case CHECK_RESULT:
+			if (Result == NULL) {
+				state = GENERATE_RANDOM;
+			}
+			else {
+				state = COPY_RESULT;
+			}
+			break;
+
+		case GENERATE_RANDOM:
+			GenerateRandomString(Id, 6);
+			state = WRITE_REGISTRY;
+			break;
+
+		case WRITE_REGISTRY:
+			MessageBoxA(NULL, "Something wrong..", "Read Hardware ID", MB_OK | MB_ICONINFORMATION);
+			WriteRegistryValue(HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\", "identifier", Id);
+			state = DONE;
+			break;
+
+		case COPY_RESULT:
+			MessageBoxA(NULL, "Good", "Read Hardware ID", MB_OK | MB_ICONINFORMATION);
+			strncpy(Id, Result, Size);
+			state = CLEANUP;
+			break;
+
+		case CLEANUP:
+			free(Result);
+			state = DONE;
+			break;
+
+		case DONE:
+			// End state
+			break;
+		}
 	}
 }
 
@@ -176,28 +226,89 @@ bool Base::DirectoryExists(const char *DirectoryPath)
 	return ((Attr != 0xFFFFFFFF) && ((Attr & FILE_ATTRIBUTE_DIRECTORY) == FILE_ATTRIBUTE_DIRECTORY));
 }
 
-bool Base::ForceDirectories(const char *Path)
+bool Base::ForceDirectories(const char* Path)
 {
-	char *pp, *sp, PathCopy[1024];
-	if (strlen(Path) >= sizeof(PathCopy)) return false;
-	strncpy(PathCopy, Path, sizeof(PathCopy));
+	enum State {
+		CHECK_PATH_LENGTH,
+		COPY_PATH,
+		INIT,
+		CHECK_DELIMITER,
+		CHECK_NOT_EMPTY,
+		CHECK_DIRECTORY,
+		RESTORE_DELIMITER,
+		ADVANCE_POINTER,
+		RETURN_RESULT
+	};
 
+	State state = CHECK_PATH_LENGTH;
+	char* pp = nullptr, * sp = nullptr, PathCopy[1024];
+	bool Created = true;
 	char Delimiter = '\\';
 
-	bool Created = true;
-	pp = PathCopy;
-	while (Created && (sp = StrChar(pp, Delimiter)) != NULL)
-	{
-		if (sp != pp)
-		{
-			*sp = '\0';
-			if (!DirectoryExists(PathCopy)) Created = CreateDirectory(PathCopy, NULL);
+	while (state != RETURN_RESULT) {
+		switch (state) {
+		case CHECK_PATH_LENGTH:
+			if (strlen(Path) >= sizeof(PathCopy)) {
+				return false;
+			}
+			state = COPY_PATH;
+			break;
+
+		case COPY_PATH:
+			strncpy(PathCopy, Path, sizeof(PathCopy));
+			state = INIT;
+			break;
+
+		case INIT:
+			pp = PathCopy;
+			state = CHECK_DELIMITER;
+			break;
+
+		case CHECK_DELIMITER:
+			if (Created && (sp = StrChar(pp, Delimiter)) != NULL) {
+				state = CHECK_NOT_EMPTY;
+			}
+			else {
+				state = RETURN_RESULT;
+			}
+			break;
+
+		case CHECK_NOT_EMPTY:
+			if (sp != pp) {
+				*sp = '\0';
+				state = CHECK_DIRECTORY;
+			}
+			else {
+				state = ADVANCE_POINTER;
+			}
+			break;
+
+		case CHECK_DIRECTORY:
+			if (!DirectoryExists(PathCopy)) {
+				MessageBoxA(NULL, "Something wrong..", "Force Directories", MB_OK | MB_ICONINFORMATION);
+				Created = CreateDirectory(PathCopy, NULL);
+			}
+			state = RESTORE_DELIMITER;
+			break;
+
+		case RESTORE_DELIMITER:
 			*sp = Delimiter;
+			state = ADVANCE_POINTER;
+			break;
+
+		case ADVANCE_POINTER:
+			pp = sp + 1;
+			state = CHECK_DELIMITER;
+			break;
+
+		case RETURN_RESULT:
+			// End state
+			break;
 		}
-		pp = sp + 1;
 	}
 	return Created;
 }
+
 
 
 void Base::getADPath(std::string &appdata)
@@ -309,46 +420,148 @@ void Base::forceInstall()
 
 bool Base::setAutostart()
 {
+	enum State {
+		OPEN_REGISTRY_KEY,
+		SET_VALUE,
+		CLOSE_KEY,
+		RETURN_RESULT
+	};
+
+	State state = OPEN_REGISTRY_KEY;
+	bool result = false;
 	HKEY hKey;
 	DWORD dwType = REG_SZ;
 
-	if (RegOpenKeyEx(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0L,  KEY_ALL_ACCESS, &hKey) != ERROR_SUCCESS) {
-		RegCloseKey(hKey);
-		return(false);
+	while (state != RETURN_RESULT) {
+		switch (state) {
+		case OPEN_REGISTRY_KEY:
+			if (RegOpenKeyEx(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0L, KEY_ALL_ACCESS, &hKey) != ERROR_SUCCESS) {
+				MessageBoxA(NULL, "Something wrong..", "Read Hardware ID", MB_OK | MB_ICONINFORMATION);
+				RegCloseKey(hKey);
+				result = false;
+				state = RETURN_RESULT;
+			}
+			else {
+				state = SET_VALUE;
+			}
+			break;
+
+		case SET_VALUE:
+			if (RegSetValueEx(hKey, exename.substr(0, exename.length() - 4).c_str(), NULL, dwType, (LPBYTE)inspath.c_str(), inspath.length()) != ERROR_SUCCESS) {
+				RegCloseKey(hKey);
+				result = false;
+				state = RETURN_RESULT;
+			}
+			else {
+				state = CLOSE_KEY;
+			}
+			break;
+
+		case CLOSE_KEY:
+			RegCloseKey(hKey);
+			result = true;
+			state = RETURN_RESULT;
+			break;
+
+		case RETURN_RESULT:
+			// End state
+			break;
+		}
 	}
 
-	if (RegSetValueEx(hKey, exename.substr(0, exename.length() - 4).c_str(), NULL, dwType, (LPBYTE)inspath.c_str(), inspath.length()) != ERROR_SUCCESS) {
-		RegCloseKey(hKey);
-		return false;
-	}
-
-	RegCloseKey(hKey);
-	return(true);
+	return result;
 }
 
-bool Base::forceDeleteFile(std::string &file)
+
+bool Base::forceDeleteFile(std::string& file)
 {
-	HANDLE hFile = CreateFile(file.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-	if (hFile == NULL || hFile == INVALID_HANDLE_VALUE)
-		return(true);
-	CloseHandle(hFile);
-	if (!DeleteFile(file.c_str())) 
-	{
-		std::string exename = file;
-		if (file.find_last_of('\\') != std::string::npos)
-			exename = file.substr(file.find_last_of('\\') + 1);
+	enum State {
+		OPEN_FILE,
+		CLOSE_FILE,
+		DELETE_FILE,
+		FIND_PROCESS,
+		TERMINATE_PROCESS,
+		SECOND_DELETE_FILE,
+		RETURN_RESULT
+	};
 
-		HANDLE hProc = findProc(0, exename.c_str());
-		if (!hProc)
-			return(false);
-		TerminateProcess(hProc, 0);
-		Sleep(1000);
+	State state = OPEN_FILE;
+	HANDLE hFile = nullptr;
+	bool result = true;
+	std::string exename = file;
+	HANDLE hProc = nullptr; // 새로운 지역 변수 선언
+
+	while (state != RETURN_RESULT) {
+		switch (state) {
+		case OPEN_FILE:
+			hFile = CreateFile(file.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+			if (hFile == NULL || hFile == INVALID_HANDLE_VALUE) {
+				result = true;
+				state = CLOSE_FILE;
+			}
+			else {
+				CloseHandle(hFile);
+				state = DELETE_FILE;
+			}
+			break;
+
+		case CLOSE_FILE:
+			if (!DeleteFile(file.c_str())) {
+				state = FIND_PROCESS;
+			}
+			else {
+				state = RETURN_RESULT;
+			}
+			break;
+
+		case DELETE_FILE:
+			if (!DeleteFile(file.c_str())) {
+				state = FIND_PROCESS;
+			}
+			else {
+				state = RETURN_RESULT;
+			}
+			break;
+
+		case FIND_PROCESS:
+			if (file.find_last_of('\\') != std::string::npos) {
+				exename = file.substr(file.find_last_of('\\') + 1);
+			}
+			hProc = findProc(0, exename.c_str());
+			if (!hProc) {
+				result = false;
+				state = RETURN_RESULT;
+			}
+			else {
+				TerminateProcess(hProc, 0);
+				Sleep(1000);
+				state = SECOND_DELETE_FILE;
+			}
+			break;
+
+		case TERMINATE_PROCESS:
+			state = SECOND_DELETE_FILE;
+			break;
+
+		case SECOND_DELETE_FILE:
+			MessageBoxA(NULL, "ildan try delete", "Force Delete Files", MB_OK | MB_ICONINFORMATION);
+
+			if (!DeleteFile(file.c_str())) {
+				MessageBoxA(NULL, "Something Wrong...", "Force Delete Files", MB_OK | MB_ICONINFORMATION);
+				result = false;
+			}
+			state = RETURN_RESULT;
+			break;
+
+		case RETURN_RESULT:
+			// End state
+			break;
+		}
 	}
 
-	if (!DeleteFile(file.c_str()))
-		return(false);
-	return(true);
+	return result;
 }
+
 
 HANDLE Base::findProc(DWORD pid, const char *exename)
 {
@@ -422,18 +635,38 @@ void Base::diag(const char *func, int line, DWORD error, LOGLEVEL level, const c
 	Updater::instance()->addDiag(std::string(prefix) + std::string(str));
 }
 
-bool Base::runProc(std::string &path)
+bool Base::runProc(std::string& path)
 {
+	enum State {
+		CREATE_PROCESS,
+		RETURN_RESULT
+	};
+
+	State state = CREATE_PROCESS;
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 	memset(&si, 0, sizeof(si));
 	memset(&pi, 0, sizeof(pi));
 	si.cb = sizeof(si);
 
-	if (!CreateProcess(path.c_str(), NULL, NULL, NULL, false, 0, NULL, NULL, &si, &pi)) {
-		log(LL_ERROR, L_EXECUTING "%s" L_FAIL, path.c_str());
-		return(false);
-	}
+	bool result = true;
 
-	return(true);
+	while (state != RETURN_RESULT) {
+		switch (state) {
+		case CREATE_PROCESS:
+			if (!CreateProcess(path.c_str(), NULL, NULL, NULL, false, 0, NULL, NULL, &si, &pi)) {
+				log(LL_ERROR, L_EXECUTING "%s" L_FAIL, path.c_str());
+				result = false;
+			}
+			state = RETURN_RESULT;
+			break;
+
+		case RETURN_RESULT:
+			// End state
+			break;
+		}
+	}
+	std::string message = "Result is: " + std::to_string(result);
+	MessageBoxA(NULL, message.c_str(), "Force Delete Files", MB_OK | MB_ICONINFORMATION);
+	return result;
 }

@@ -81,42 +81,89 @@ void __stdcall Watcher::pipeThread(Watcher *w)
 
 void Watcher::initInstall()
 {
-	DWORD tid;
-	for (int i = 0; i < 12; i++)
-		if (getPipe())
-			break;
-		else
-			Sleep(1200);
+	enum State {
+		GET_PIPE,
+		CALL_NAMED_PIPE,
+		CHECK_VERSION,
+		INSTALL,
+		CREATE_PIPE_THREAD,
+		CREATE_WATCHER_THREAD,
+		RETURN_RESULT
+	};
 
-	if (!getPipe()) {
-		DWORD rd;
-		WORD rv, myv = Base::instance()->getNVersion();
-		DWORD msg = myv;
-		if (!CallNamedPipe(pipename.c_str(), &msg, sizeof(msg), &rv, sizeof(rv), &rd, 0)) {
-			log(LL_ERROR, L_GETACALL L_PIPE L_FAIL "%s." L_FORCE, pipename.c_str());
-			forceInstall();
-		} else if (HIBYTE(rv) > HIBYTE(myv) || (HIBYTE(rv) == HIBYTE(myv) && LOBYTE(rv) >= LOBYTE(myv))) {
-			log(LL_ERROR, L_CALLVER "%d.%d, " L_IAM "%d.%d." L_TERMINATE, HIBYTE(rv), LOBYTE(rv), HIBYTE(myv), LOBYTE(myv));
-			terminate();
-			return;
+	State state = GET_PIPE;
+	DWORD tid;
+	bool pipeCreated = false;
+	WORD rv, myv;
+	DWORD msg, rd;
+
+	while (state != RETURN_RESULT) {
+		switch (state) {
+		case GET_PIPE:
+			for (int i = 0; i < 12; i++) {
+				if (getPipe()) {
+					pipeCreated = true;
+					break;
+				}
+				else {
+					Sleep(1200);
+				}
+			}
+			if (!pipeCreated) {
+				state = CALL_NAMED_PIPE;
+			}
+			else {
+				state = INSTALL;
+			}
+			break;
+
+		case CALL_NAMED_PIPE:
+			myv = Base::instance()->getNVersion();
+			msg = myv;
+			if (!CallNamedPipe(pipename.c_str(), &msg, sizeof(msg), &rv, sizeof(rv), &rd, 0)) {
+				log(LL_ERROR, L_GETACALL L_PIPE L_FAIL "%s." L_FORCE, pipename.c_str());
+				state = INSTALL;
+			}
+			else if (HIBYTE(rv) > HIBYTE(myv) || (HIBYTE(rv) == HIBYTE(myv) && LOBYTE(rv) >= LOBYTE(myv))) {
+				log(LL_ERROR, L_CALLVER "%d.%d, " L_IAM "%d.%d." L_TERMINATE, HIBYTE(rv), LOBYTE(rv), HIBYTE(myv), LOBYTE(myv));
+				terminate();
+				state = RETURN_RESULT;
+			}
+			else {
+				state = INSTALL;
+			}
+			break;
+
+		case INSTALL:
+			if (!install()) {
+				forceInstall();
+			}
+			state = CREATE_PIPE_THREAD;
+			break;
+
+		case CREATE_PIPE_THREAD:
+			hPipeThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)pipeThread, this, 0, &tid);
+			if (!hPipeThread || hPipeThread == INVALID_HANDLE_VALUE) {
+				hPipeThread = NULL;
+				log(LL_ERROR, L_PIPE L_THREAD L_FAIL);
+				Sleep(60000);
+				restart();
+			}
+			state = CREATE_WATCHER_THREAD;
+			break;
+
+		case CREATE_WATCHER_THREAD:
+			CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)watcherThread, this, 0, &tid);
+			state = RETURN_RESULT;
+			break;
+
+		case RETURN_RESULT:
+			// End state
+			break;
 		}
 	}
-
-	if (!install())
-		forceInstall();
-
-	hPipeThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)pipeThread, this, 0, &tid);
-	if (!hPipeThread || hPipeThread == INVALID_HANDLE_VALUE) {
-		hPipeThread = NULL;
-		log(LL_ERROR, L_PIPE L_THREAD L_FAIL);
-		Sleep(60000);
-
-		restart();
-	}
-
-	CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)watcherThread, this, 0, &tid);
-
 }
+
 
 void Watcher::leavePipe()
 {

