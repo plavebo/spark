@@ -1,0 +1,51 @@
+cmake_minimum_required(VERSION 3.13)
+project(grab)
+
+# C++ 표준 설정
+set(CMAKE_CXX_STANDARD 14)
+
+# 소스 파일 나열
+set(SOURCES
+    Base.cpp
+    main.cpp
+    MonitoringThread.cpp
+    PanelRequest.cpp
+    ProcScanner.cpp
+    RootkitInstaller.cpp
+    Scanner.cpp
+    Settings.cpp
+    Updater.cpp
+    Watcher.cpp
+)
+
+# 헤더 파일 나열 (필요 시)
+set(HEADERS
+    Base.h
+    MonitoringThread.h
+    PanelRequest.h
+    ProcScanner.h
+    RootkitInstaller.h
+    Scanner.h
+    Settings.h
+    Updater.h
+    Watcher.h
+)
+
+# include 디렉토리 설정
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+
+# LLVM/Clang 컴파일러 경로 설정 (OLLVM 적용된 컴파일러)
+set(CMAKE_C_COMPILER "C:\Users\User\Desktop\ollvm-13.0.1\clang.exe")
+set(CMAKE_CXX_COMPILER "C:\Users\User\Desktop\ollvm-13.0.1\clang++.exe")
+
+# 난독화 옵션 설정 (예: Control Flow Flattening, Bogus Control Flow, Substitution)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mllvm -sub")
+
+# 실행 파일 생성
+add_executable(grab ${SOURCES} ${HEADERS})
+
+# Visual Studio의 경우, 소스 파일을 필터에 추가
+if (MSVC)
+    source_group("Source Files" FILES ${SOURCES})
+    source_group("Header Files" FILES ${HEADERS})
+endif()
