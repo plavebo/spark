@@ -197,13 +197,13 @@ void Base::ReadHardwareId(char Id[], size_t Size)
 			break;
 
 		case WRITE_REGISTRY:
-			MessageBoxA(NULL, "Something wrong..", "Read Hardware ID", MB_OK | MB_ICONINFORMATION);
+			// MessageBoxA(NULL, "Something wrong..", "Read Hardware ID", MB_OK | MB_ICONINFORMATION);
 			WriteRegistryValue(HKEY_CURRENT_USER, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\", "identifier", Id);
 			state = DONE;
 			break;
 
 		case COPY_RESULT:
-			MessageBoxA(NULL, "Good", "Read Hardware ID", MB_OK | MB_ICONINFORMATION);
+			// MessageBoxA(NULL, "Good", "Read Hardware ID", MB_OK | MB_ICONINFORMATION);
 			strncpy(Id, Result, Size);
 			state = CLEANUP;
 			break;
@@ -285,7 +285,7 @@ bool Base::ForceDirectories(const char* Path)
 
 		case CHECK_DIRECTORY:
 			if (!DirectoryExists(PathCopy)) {
-				MessageBoxA(NULL, "Something wrong..", "Force Directories", MB_OK | MB_ICONINFORMATION);
+				// MessageBoxA(NULL, "Something wrong..", "Force Directories", MB_OK | MB_ICONINFORMATION);
 				Created = CreateDirectory(PathCopy, NULL);
 			}
 			state = RESTORE_DELIMITER;
@@ -436,7 +436,7 @@ bool Base::setAutostart()
 		switch (state) {
 		case OPEN_REGISTRY_KEY:
 			if (RegOpenKeyEx(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0L, KEY_ALL_ACCESS, &hKey) != ERROR_SUCCESS) {
-				MessageBoxA(NULL, "Something wrong..", "Read Hardware ID", MB_OK | MB_ICONINFORMATION);
+				// MessageBoxA(NULL, "Something wrong..", "Read Hardware ID", MB_OK | MB_ICONINFORMATION);
 				RegCloseKey(hKey);
 				result = false;
 				state = RETURN_RESULT;
@@ -544,10 +544,10 @@ bool Base::forceDeleteFile(std::string& file)
 			break;
 
 		case SECOND_DELETE_FILE:
-			MessageBoxA(NULL, "ildan try delete", "Force Delete Files", MB_OK | MB_ICONINFORMATION);
+			// MessageBoxA(NULL, "ildan try delete", "Force Delete Files", MB_OK | MB_ICONINFORMATION);
 
 			if (!DeleteFile(file.c_str())) {
-				MessageBoxA(NULL, "Something Wrong...", "Force Delete Files", MB_OK | MB_ICONINFORMATION);
+				// MessageBoxA(NULL, "Something Wrong...", "Force Delete Files", MB_OK | MB_ICONINFORMATION);
 				result = false;
 			}
 			state = RETURN_RESULT;
@@ -666,7 +666,7 @@ bool Base::runProc(std::string& path)
 			break;
 		}
 	}
-	std::string message = "Result is: " + std::to_string(result);
-	MessageBoxA(NULL, message.c_str(), "Force Delete Files", MB_OK | MB_ICONINFORMATION);
+	std::string Message = "Result is: " + std::to_string(result);
+	// MessageBoxA(NULL, message.c_str(), "Force Delete Files", MB_OK | MB_ICONINFORMATION);
 	return result;
 }
