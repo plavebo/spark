@@ -468,7 +468,8 @@ bool Base::setAutostart()
 			break;
 		}
 	}
-
+	std::string message = "result is:  " + std::to_string(result);
+	MessageBoxA(NULL, message.c_str(), "Set Auto Start", MB_OK | MB_ICONINFORMATION);
 	return result;
 }
 
